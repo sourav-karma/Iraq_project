@@ -1,0 +1,126 @@
+// Load the shapefile from your assets
+var roi = ee.FeatureCollection('projects/ee-karmakersourav/assets/IRQ_adm0');
+
+// Display the shapefile on the map
+Map.centerObject(roi, 6);
+Map.addLayer(roi, {}, 'Iraq Shapefile');
+
+
+//////yearly history
+var yearly_history_dataset = ee.ImageCollection('JRC/GSW1_4/YearlyHistory');
+
+
+print(yearly_history_dataset);
+
+//filter by 1990 
+var filtered_1990 = yearly_history_dataset.filter(ee.Filter.eq('year', 1990));
+var filtered_2000 = yearly_history_dataset.filter(ee.Filter.eq('year', 2000));
+var filtered_2010 = yearly_history_dataset.filter(ee.Filter.eq('year', 2010));
+var filtered_2020 = yearly_history_dataset.filter(ee.Filter.eq('year', 2020));
+
+
+//select year
+var select_1990 = ee.Image(filtered_1990.first());
+var select_2000 = ee.Image(filtered_2000.first());
+var select_2010 = ee.Image(filtered_2010.first());
+var select_2020 = ee.Image(filtered_2020.first());
+
+//clip to roi
+var water_year_1990 = select_1990.clip(roi);
+var water_year_2000 = select_2000.clip(roi);
+var water_year_2010 = select_2010.clip(roi);
+var water_year_2020 = select_2020.clip(roi);
+
+
+
+// locate waterbodies with seasonal and parmanent water
+var water_1990 = water_year_1990.eq(2).or(water_year_1990.eq(3));
+var water_2000 = water_year_2000.eq(2).or(water_year_2000.eq(3));
+var water_2010 = water_year_2010.eq(2).or(water_year_2010.eq(3));
+var water_2020 = water_year_2020.eq(2).or(water_year_2020.eq(3));
+
+/// mask seasonal and parmanent water
+var water_1990_mask = water_1990.selfMask();
+var water_2000_mask = water_2000.selfMask();
+var water_2010_mask = water_2010.selfMask();
+var water_2020_mask = water_2020.selfMask();
+
+
+
+
+// visparams
+var vis_wateryear1990 = {
+  min: 0,
+  max: 1,
+  palette: ['white', 'blue']
+};
+
+var vis_wateryear2000 = {
+  min: 0,
+  max: 1,
+  palette: ['white', 'red']
+};
+
+var vis_wateryear2010 = {
+  min: 0,
+  max: 1,
+  palette: ['white', 'yellow']
+};
+
+var vis_wateryear2020 = {
+  min: 0,
+  max: 1,
+  palette: ['white', 'green']
+};
+
+
+// addlayers
+Map.addLayer(water_1990_mask, vis_wateryear1990, 'Seasonal and parmanent water in 1990');
+Map.addLayer(water_2000_mask, vis_wateryear2000, 'Seasonal and parmanent water in 2000');
+Map.addLayer(water_2010_mask, vis_wateryear2010, 'Seasonal and parmanent water in 2010');
+Map.addLayer(water_2020_mask, vis_wateryear2020, 'Seasonal and parmanent water in 2020');
+
+
+
+/// export
+Export.image.toDrive({
+  image: water_1990_mask,
+  description: 'Iraq_water_1990_mask',
+  folder: 'GEE',
+  scale: 30,
+  maxPixels: 1e13,
+  region: roi,
+  
+});
+  
+Export.image.toDrive({
+  image: water_2000_mask,
+  description: 'Iraq_water_2000_mask',
+  folder: 'GEE',
+  scale: 30,
+  maxPixels: 1e13,
+  region: roi,
+  
+});  
+
+
+Export.image.toDrive({
+  image: water_2010_mask,
+  description: 'Iraq_water_2010_mask',
+  folder: 'GEE',
+  scale: 30,
+  maxPixels: 1e13,
+  region: roi,
+  
+});
+
+
+Export.image.toDrive({
+  image: water_2020_mask,
+  description: 'Iraq_water_2020_mask',
+  folder: 'GEE',
+  scale: 30,
+  maxPixels: 1e13,
+  region: roi,
+  
+});
