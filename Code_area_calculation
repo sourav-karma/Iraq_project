@@ -1,0 +1,68 @@
+// Load the shapefile for Iraq's governorates
+var roi = ee.FeatureCollection('projects/ee-karmakersourav/assets/iraq_adm1_19gv');
+
+// Yearly history dataset
+var yearly_history_dataset = ee.ImageCollection('JRC/GSW1_4/YearlyHistory');
+
+// Function to calculate water-covered area for each governorate in square kilometers for a given year
+var calculateWaterAreaByGovernorate = function(year) {
+  // Filter the dataset by the specific year
+  var year_image = yearly_history_dataset.filter(ee.Filter.eq('year', year)).first();
+  
+  // Identify water bodies with seasonal and permanent water
+  var water = year_image.eq(2).or(year_image.eq(3));
+  
+  // Mask the water bodies
+  var water_mask = water.selfMask();
+  
+  // Calculate the area of water-covered pixels in square meters
+  var areaImage = water_mask.multiply(ee.Image.pixelArea());
+  
+  // Iterate over each governorate and calculate the area
+  var governorateAreas = roi.map(function(governorate) {
+    // Clip the area image to the current governorate
+    var governorateGeometry = governorate.geometry();
+    
+    // Reduce the region to calculate the area within the governorate
+    var areaDictionary = areaImage.reduceRegion({
+      reducer: ee.Reducer.sum(),
+      geometry: governorateGeometry,
+      scale: 30,
+      maxPixels: 1e10
+    });
+    
+    // Get the band name
+    var bandName = areaImage.bandNames().get(0);
+    
+    // Calculate the area in square kilometers
+    var areaSqKm = ee.Number(areaDictionary.get(bandName)).divide(1e6);
+    
+    // Return the governorate name and the water-covered area
+    return governorate.set('Year', year).set('Water_Area_SqKm', areaSqKm);
+  });
+  
+  // Print the results for the year
+  print('Water-covered area by governorate in ' + year + ':', governorateAreas);
+  
+  return governorateAreas;
+};
+
+// Calculate and print the water-covered area by governorate for each of the selected years
+
+var years = [1984, 1985, 1986, 1987, 1990, 1991, 1992, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020];
+var allYearsData = years.map(function(year) {
+  return calculateWaterAreaByGovernorate(year);
+});
+
+// Flatten the results for all years into a single FeatureCollection
+var flattenedResults = ee.FeatureCollection(allYearsData).flatten();
+
+// Print the final flattened results
+print('All years water-covered area by governorate:', flattenedResults);
+
+// Export the results to a CSV file
+Export.table.toDrive({
+  collection: flattenedResults,
+  description: 'Iraq_Governorate_Water_Area_By_Year',
+  fileFormat: 'CSV'
+});
