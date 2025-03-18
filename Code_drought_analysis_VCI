@@ -1,0 +1,112 @@
+var modis = ee.ImageCollection('MODIS/061/MOD13Q1');
+
+// Load the Iraq shapefile
+var iraq = ee.FeatureCollection('projects/ee-karmakersourav/assets/iraq_adm1_19gv');
+
+// Define the time period
+var startYear = 2010;
+var endYear = 2020;
+var startDate = ee.Date.fromYMD(startYear, 1, 1);
+var endDate = ee.Date.fromYMD(endYear, 12, 31);
+
+// Filter the MODIS data by date and region (Iraq)
+var filtered = modis
+  .filter(ee.Filter.date(startDate, endDate))
+  .map(function(image) {
+    return image.clip(iraq);
+  });
+
+// Cloud Masking Function
+var bitwiseExtract = function(input, fromBit, toBit) {
+  var maskSize = ee.Number(1).add(toBit).subtract(fromBit);
+  var mask = ee.Number(1).leftShift(maskSize).subtract(1);
+  return input.rightShift(fromBit).bitwiseAnd(mask);
+};
+
+var maskSnowAndClouds = function(image) {
+  var summaryQa = image.select('SummaryQA');
+  var qaMask = bitwiseExtract(summaryQa, 0, 1).lte(1);
+  var maskedImage = image.updateMask(qaMask);
+  return maskedImage.copyProperties(image, ['system:index', 'system:time_start']);
+};
+
+// Apply the cloud masking function
+var maskedCol = filtered.map(maskSnowAndClouds);
+
+var ndviCol = maskedCol.select('NDVI');
+
+// Scale NDVI values
+var scaleNdvi = function(image) {
+  var scaled = image.divide(10000);
+  return scaled.copyProperties(image, ['system:index', 'system:time_start']);
+};
+
+var ndviScaled = ndviCol.map(scaleNdvi);
+
+// Create NDVI composite for every month
+var years = ee.List.sequence(startYear, endYear);
+var months = ee.List.sequence(1, 12);
+
+var monthlyImages = years.map(function(year) {
+  return months.map(function(month) {
+    var filtered = ndviScaled
+      .filter(ee.Filter.calendarRange(year, year, 'year'))
+      .filter(ee.Filter.calendarRange(month, month, 'month'));
+    var monthly = filtered.mean();
+    return monthly.set({'month': month, 'year': year}).clip(iraq);
+  });
+}).flatten();
+
+var monthlyCol = ee.ImageCollection.fromImages(monthlyImages);
+
+// Calculate Minimum NDVI for each month across all years
+var monthlyMinImages = months.map(function(month) {
+  var filtered = monthlyCol.filter(ee.Filter.eq('month', month));
+  var monthlyMin = filtered.min().clip(iraq);
+  return monthlyMin.set('month', month);
+});
+
+var monthlyMin = ee.ImageCollection.fromImages(monthlyMinImages);
+
+// Calculate Maximum NDVI for each month across all years
+var monthlyMaxImages = months.map(function(month) {
+  var filtered = monthlyCol.filter(ee.Filter.eq('month', month));
+  var monthlyMax = filtered.max().clip(iraq);
+  return monthlyMax.set('month', month);
+});
+
+var monthlyMax = ee.ImageCollection.fromImages(monthlyMaxImages);
+
+// Calculate VCI for August 2012
+var currentYear = 2012;
+var currentMonth = 8;
+
+var filtered = monthlyCol
+  .filter(ee.Filter.eq('year', currentYear))
+  .filter(ee.Filter.eq('month', currentMonth));
+var currentMonthNdvi = ee.Image(filtered.first());
+
+var minNdvi = ee.Image(monthlyMin.filter(ee.Filter.eq('month', currentMonth)).first());
+var maxNdvi = ee.Image(monthlyMax.filter(ee.Filter.eq('month', currentMonth)).first());
+
+// VCI calculation
+var image = ee.Image.cat([currentMonthNdvi, minNdvi, maxNdvi]).rename(['ndvi', 'min', 'max']);
+var vci = image.expression(
+  '100 * (ndvi - min) / (max - min)',
+  {
+    'ndvi': image.select('ndvi'),
+    'min': image.select('min'),
+    'max': image.select('max')
+  }).rename('vci');
+
+// Visualization parameters
+var visParams = {min: 0, max: 1, palette: ['white', 'green']};
+var vciPalette = ['#a50026','#d73027','#f46d43','#fdae61',
+  '#fee08b','#d9ef8b','#a6d96a','#66bd63','#1a9850','#006837'];
+var vciVisParams = {min: 0, max: 100, palette: vciPalette};
+
+Map.centerObject(iraq, 6);
+Map.addLayer(minNdvi, visParams, 'Minimum May NDVI', false);
+Map.addLayer(maxNdvi, visParams, 'Maximum May NDVI', false);
+Map.addLayer(currentMonthNdvi, visParams, 'Current May NDVI', false);
+Map.addLayer(vci, vciVisParams, 'VCI');
