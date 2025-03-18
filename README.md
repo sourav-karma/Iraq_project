@@ -6,5 +6,4 @@ The main objective of this study is to understand the degree of exposure, sensit
 ![image](https://github.com/user-attachments/assets/6d9a0be6-da39-4474-8084-1e140fc4bfb1)
 
 
-![image](https://github.com/user-attachments/assets/3aa7d415-e008-45be-b236-42a98228dfdb)
 
